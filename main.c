@@ -4,11 +4,14 @@
 #include <errno.h>
 #include <unistd.h>
 #include <termios.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 /* DEFINES */
+
+#define KAYRAK_VERSION "0.0.1"
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -62,13 +65,32 @@ char editorReadKey() {
     return c;
 }
 
+int getCursorPosition(int *rows, int *cols) {  
+    char buf[32];
+    unsigned int i = 0;
+    
+    if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
+    
+    while (i < sizeof(buf) - 1) {
+        if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
+        
+        if (buf[i] == 'R') break;
+        i++;
+    }
+    
+    buf[i] = '\0';  
+    if (buf[0] != '\x1b' || buf[1] != '[') return -1;
+    if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) return -1;
+    
+    return 0;
+}
+
 int getTermianlSize(int *rows, int *cols) {
   struct winsize ws;
   
-    if (1 || ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
         if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
-        
-        editorReadKey();
+        return getCursorPosition(rows, cols);
         return -1;
     } else {
         *cols = ws.ws_col;
@@ -77,24 +99,68 @@ int getTermianlSize(int *rows, int *cols) {
     }
 }
 
-/*** output ***/
+/* APPEND BUUFFER */
 
-void editorDrawRows(){
+struct abuf {
+  char *b;
+  int len;
+};
+
+#define ABUF_INIT {NULL, 0}
+
+void abufAppend(struct abuf *abuf, const char *s, int len) {
+    char *new = realloc(abuf->b, abuf->len + len);
+    
+    if (new == NULL) return;
+    
+    memcpy(&new[abuf->len], s, len);
+    abuf->b = new;
+    abuf->len += len;
+}
+
+void abufFree(struct abuf *abuf) {
+  free(abuf->b);
+}
+
+/* OUTPUT */
+
+void editorDrawRows(struct abuf *abuf){
     int y;
     for (y = 0; y < E.screenrows; y++) {
-        write(STDOUT_FILENO, ">\r\n", 3);
+        if (y == E.screenrows / 2) {
+        char welcome[80];
+        
+        int welcomelen = snprintf(welcome, sizeof(welcome),
+        ">\t\tKAYRAK editor -- version %s", KAYRAK_VERSION);
+        if (welcomelen > E.screencolumns) welcomelen = E.screencolumns;
+        
+        abufAppend(abuf, welcome, welcomelen);
+    } else {
+        abufAppend(abuf, ">", 1);
+    }
+        abufAppend(abuf, "\x1b[K", 3);
+        if(y < E.screenrows - 1) abufAppend(abuf, "\r\n", 2);
     }
 }
 
-void editorRefreshScreen() {
-    write(STDOUT_FILENO, "\x1b[2J", 4); //Clears the screen
-    write(STDOUT_FILENO, "\x1b[H", 3);  //Poisitons the cursor to the top left
+void editorRefreshScreen() {  
+    struct abuf ab = ABUF_INIT;
 
-    editorDrawRows();
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    abufAppend(&ab, "\x1b[?25l", 6);  //hide cursor 
+    //abAppend(&ab, "\x1b[2J", 4);    //erase everything on screen
+    abufAppend(&ab, "\x1b[H", 3);
+    
+    editorDrawRows(&ab);
+    
+    abufAppend(&ab, "\x1b[H", 3);
+    abufAppend(&ab, "\x1b[?25h", 6);  //show cursor
+    
+    write(STDOUT_FILENO, ab.b, ab.len);
+    
+    abufFree(&ab);
 }
 
-/*** input ***/
+/* INPUT */
 
 void editorProcessKeypress() {
     char c = editorReadKey();
