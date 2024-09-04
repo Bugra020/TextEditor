@@ -18,6 +18,7 @@
 /* DATA */
 
 struct editorConfig {
+    int cx, cy; // x and y (column and row) of teh cursor
     int screenrows;
     int screencolumns;
     struct termios orig_termios;
@@ -131,8 +132,15 @@ void editorDrawRows(struct abuf *abuf){
         char welcome[80];
         
         int welcomelen = snprintf(welcome, sizeof(welcome),
-        ">\t\tKAYRAK editor -- version %s", KAYRAK_VERSION);
+        "KAYRAK editor -- version %s", KAYRAK_VERSION);
         if (welcomelen > E.screencolumns) welcomelen = E.screencolumns;
+
+        int centerPadding = (E.screencolumns - welcomelen) / 2;
+        if(centerPadding){
+            abufAppend(abuf, ">", 1);
+            centerPadding--;
+        }
+        while (centerPadding--) abufAppend(abuf, " ", 1);
         
         abufAppend(abuf, welcome, welcomelen);
     } else {
@@ -152,7 +160,10 @@ void editorRefreshScreen() {
     
     editorDrawRows(&ab);
     
-    abufAppend(&ab, "\x1b[H", 3);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    abufAppend(&ab, buf, strlen(buf));
+
     abufAppend(&ab, "\x1b[?25h", 6);  //show cursor
     
     write(STDOUT_FILENO, ab.b, ab.len);
@@ -162,13 +173,37 @@ void editorRefreshScreen() {
 
 /* INPUT */
 
+void editorMoveCursor(char key){
+    switch (key){
+    case 'w':
+        E.cy--;
+        break;
+    case 'a':
+        E.cx--;
+        break;
+    case 's':
+        E.cy++;
+        break;
+    case 'd':
+        E.cx++;
+        break;
+    }
+}
+
 void editorProcessKeypress() {
     char c = editorReadKey();
 
     switch (c) {
         case CTRL_KEY('q'):
-            editorRefreshScreen();
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
+            break;
+        case 'w':
+        case 'a':
+        case 's':
+        case 'd':
+            editorMoveCursor(c);
             break;
     }
 
@@ -183,15 +218,19 @@ void editorProcessKeypress() {
 
 /* INIT */
 
-int main() {
-    enableRawMode();
+void initEditor(){
+    E.cx = 0;
+    E.cy = 0;
 
     if (getTermianlSize(&E.screenrows, &E.screencolumns) == -1) die("getTerminalSize");   
-    
+}
+
+int main() {
+    enableRawMode();
+    initEditor();
 
     while (1) {
-        write(STDOUT_FILENO, "\x1b[2J", 4); //Clears the screen
-        write(STDOUT_FILENO, "\x1b[H", 3);  //Poisitons the cursor to the top left
+        editorRefreshScreen();
 
         editorProcessKeypress();
     }
