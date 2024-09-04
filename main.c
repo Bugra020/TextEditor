@@ -1,6 +1,7 @@
 /* INCLUDES */
 
 #include <ctype.h>
+#include <sys\types.h>
 #include <errno.h>
 #include <unistd.h>
 #include <termios.h>
@@ -15,12 +16,26 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
+enum editorKey {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN
+};
+
 /* DATA */
+
+typedef struct erow {
+    int size;
+    char *chars;
+}erow;
 
 struct editorConfig {
     int cx, cy; // x and y (column and row) of teh cursor
     int screenrows;
     int screencolumns;
+    int numrows;
+    erow row;
     struct termios orig_termios;
 };
 
@@ -56,14 +71,31 @@ void enableRawMode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
-char editorReadKey() {
+int editorReadKey() {
     int nread;
     char c;
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if (nread == -1 && errno != EAGAIN) die("read");
     }
-  
-    return c;
+    
+    if (c == '\x1b') {
+        char seq[3];
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
+        if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
+        
+        if (seq[0] == '[') {
+            switch (seq[1]) {
+                case 'A': return ARROW_UP;
+                case 'B': return ARROW_DOWN;
+                case 'C': return ARROW_RIGHT;
+                case 'D': return ARROW_LEFT;
+            }
+        }
+
+        return '\x1b';
+    } else {
+        return c;
+    }
 }
 
 int getCursorPosition(int *rows, int *cols) {  
@@ -99,6 +131,19 @@ int getTermianlSize(int *rows, int *cols) {
         return 0;
     }
 }
+/*  FILE I/O */
+
+void editorOpen(){
+    char *testline = "Ey Türk gençliği! Birinci vazifen; Türk istiklalini, Türk cumhuriyetini, ilelebet muhafaza ve müdafaa etmektir.";
+    ssize_t linelen = 118;
+
+    E.row.size = linelen;
+    E.row.chars = malloc(linelen);
+    memcpy(E.row.chars, testline, linelen);
+    E.row.chars[linelen] = '\0';
+    E.numrows = 1;
+
+}
 
 /* APPEND BUUFFER */
 
@@ -128,24 +173,32 @@ void abufFree(struct abuf *abuf) {
 void editorDrawRows(struct abuf *abuf){
     int y;
     for (y = 0; y < E.screenrows; y++) {
-        if (y == E.screenrows / 2) {
-        char welcome[80];
-        
-        int welcomelen = snprintf(welcome, sizeof(welcome),
-        "KAYRAK editor -- version %s", KAYRAK_VERSION);
-        if (welcomelen > E.screencolumns) welcomelen = E.screencolumns;
+        if (y >= E.numrows){
+            if (y == E.screenrows / 3) {
+                char welcome[80];
+                
+                int welcomelen = snprintf(welcome, sizeof(welcome),
+                "KAYRAK editor -- version %s", KAYRAK_VERSION);
+                if (welcomelen > E.screencolumns) welcomelen = E.screencolumns;
 
-        int centerPadding = (E.screencolumns - welcomelen) / 2;
-        if(centerPadding){
-            abufAppend(abuf, ">", 1);
-            centerPadding--;
+                int centerPadding = (E.screencolumns - welcomelen) / 2;
+                if(centerPadding){
+                    abufAppend(abuf, ">", 1);
+                    centerPadding--;
+                }
+            
+                while (centerPadding--) abufAppend(abuf, " ", 1);
+                abufAppend(abuf, welcome, welcomelen);
+            } else {
+                abufAppend(abuf, ">", 1);
+            }   
+        }else{
+            int len = E.row.size;
+            if (len > E.screencolumns) len = E.screencolumns;
+            abufAppend(abuf, E.row.chars, len);
         }
-        while (centerPadding--) abufAppend(abuf, " ", 1);
         
-        abufAppend(abuf, welcome, welcomelen);
-    } else {
-        abufAppend(abuf, ">", 1);
-    }
+        
         abufAppend(abuf, "\x1b[K", 3);
         if(y < E.screenrows - 1) abufAppend(abuf, "\r\n", 2);
     }
@@ -173,25 +226,25 @@ void editorRefreshScreen() {
 
 /* INPUT */
 
-void editorMoveCursor(char key){
+void editorMoveCursor(int key){
     switch (key){
-    case 'w':
-        E.cy--;
+    case ARROW_UP:
+        if (E.cy != 0)  E.cy--;
         break;
-    case 'a':
-        E.cx--;
+    case ARROW_LEFT:
+        if(E.cx != 0)    E.cx--;
         break;
-    case 's':
-        E.cy++;
+    case ARROW_DOWN:
+        if(E.cy != E.screenrows - 1)    E.cy++;
         break;
-    case 'd':
-        E.cx++;
+    case ARROW_RIGHT:
+        if(E.cx != E.screencolumns - 1)E.cx++;
         break;
     }
 }
 
 void editorProcessKeypress() {
-    char c = editorReadKey();
+    int c = editorReadKey();
 
     switch (c) {
         case CTRL_KEY('q'):
@@ -199,10 +252,10 @@ void editorProcessKeypress() {
             write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
             break;
-        case 'w':
-        case 'a':
-        case 's':
-        case 'd':
+        case ARROW_UP:
+        case ARROW_DOWN:
+        case ARROW_LEFT:
+        case ARROW_RIGHT:
             editorMoveCursor(c);
             break;
     }
@@ -221,6 +274,7 @@ void editorProcessKeypress() {
 void initEditor(){
     E.cx = 0;
     E.cy = 0;
+    E.numrows = 0;
 
     if (getTermianlSize(&E.screenrows, &E.screencolumns) == -1) die("getTerminalSize");   
 }
@@ -228,6 +282,7 @@ void initEditor(){
 int main() {
     enableRawMode();
     initEditor();
+    editorOpen();
 
     while (1) {
         editorRefreshScreen();
