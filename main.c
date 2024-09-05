@@ -207,7 +207,6 @@ void editorOpen(char *filename){
     size_t linecap = 0;
     ssize_t linelen;
     
-    linelen = getline(&line, &linecap, fp);
     while ((linelen = getline(&line, &linecap, fp)) != -1){
         while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
             linelen--;
@@ -291,14 +290,14 @@ void editorDrawRows(struct abuf *abuf){
             int len = E.row[filerow].rsize - E.coloff;
             if(len < 0) len = 0;
             if (len > E.screencolumns) len = E.screencolumns;
-
+            
             char linenum[50];
-            sprintf(linenum, "%d", filerow);
+            sprintf(linenum, "%d", filerow + 1);
             int i;
             for(i = strlen(linenum); i < LINE_NUMBER_MARGIN; i++)    linenum[i] = ' ';
             linenum[i] = '\0';
             abufAppend(abuf, linenum, LINE_NUMBER_MARGIN);
-
+            
             abufAppend(abuf, &E.row[filerow].render[E.coloff], len);
         }
         
@@ -317,7 +316,7 @@ void editorDrawStatusBar(struct abuf *abuf) {
     E.filename ? E.filename : "[Unnamed]", E.numrows);
     
     int rlen = snprintf(rstatus, sizeof(rstatus), "%d:%d",
-        E.cx, E.cy + 1);
+        E.cx - LINE_NUMBER_MARGIN, E.cy + 1);
     
     if (len > E.screencolumns) len = E.screencolumns;
     
@@ -368,26 +367,26 @@ void editorMoveCursor(int key){
         if (E.cy != 0) E.cy--;
         break;
     case ARROW_LEFT:
-        if(E.cx != 0) E.cx--;
+        if(E.cx > LINE_NUMBER_MARGIN) E.cx--;
         else if(E.cy > 0){
             E.cy--;
-            E.cx = E.row[E.cy].size;
+            E.cx = E.row[E.cy].size + LINE_NUMBER_MARGIN;
         }
         break;
     case ARROW_DOWN:
         if(E.cy < E.numrows) E.cy++;
         break;
     case ARROW_RIGHT:
-        if(row && E.cx < row->size) E.cx++;
-        else if(row && E.cx == row->size){
+        if(row && E.cx < row->size + LINE_NUMBER_MARGIN) E.cx++;
+        else if(row && E.cx == row->size + LINE_NUMBER_MARGIN){
             E.cy++;
-            E.cx = 0;
+            E.cx = LINE_NUMBER_MARGIN;
         }
         break;
     }
 
     row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
-    int rowlen = row ? row->size : 0;
+    int rowlen = (row ? row->size : 0) + LINE_NUMBER_MARGIN;
     if (E.cx > rowlen) {
         E.cx = rowlen;
     }
@@ -423,7 +422,7 @@ void editorProcessKeypress() {
 /* INIT */
 
 void initEditor(){
-    E.cx = 0;
+    E.cx = LINE_NUMBER_MARGIN;
     E.cy = 0;
     E.rx = 0;
     E.numrows = 0;
