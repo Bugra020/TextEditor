@@ -37,13 +37,28 @@ enum editorKey {
     PAGE_DOWN
 };
 
+enum editorHighlight{
+    HL_NORMAL = 0,
+    HL_NUMBER,
+    HL_MATCH
+};
+
+#define HL_HIGHLIGHT_NUMBERS (1<<0)
+
 /* DATA */
+
+struct editorSyntax {
+    char *filetype;
+    char **filematch;
+    int flags;
+};
 
 typedef struct erow {
     int size;
     int rsize;
     char *chars;
     char *render;
+    unsigned char *hl;  // highlighting
 }erow;
 
 struct editorConfig {
@@ -163,6 +178,42 @@ int getTermianlSize(int *rows, int *cols) {
     }
 }
 
+/* SYNTAX HIGLIGHTING */
+
+int is_separator(int c) {
+    return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL;
+}
+
+void editorUpdateSyntax(erow *row) {
+    row->hl = realloc(row->hl, row->rsize);
+    memset(row->hl, HL_NORMAL, row->rsize);
+    
+    int prev_sep = 1;
+    int i = 0;
+    while (i < row->rsize) {
+        char c = row->render[i];
+        unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+        
+        if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) ||(c == '.' && prev_hl == HL_NUMBER)) {            
+            row->hl[i] = HL_NUMBER;
+            i++;
+            prev_sep = 0;
+            continue;
+        }
+
+        prev_sep = is_separator(c);
+        i++;
+    }
+}
+
+int editorSyntaxToColor(int hl) {
+    switch (hl) {
+        case HL_NUMBER: return 32;
+        case HL_MATCH: return 34;
+        default: return 37;
+    }
+}
+
 /* row operations */
 
 int editorRowCxToRx(erow *row, int cx) {
@@ -198,13 +249,13 @@ void editorUpdateRow(erow *row) {
         if(row->chars[j] == '\t')  tabs++;
 
     free(row->render);
-    row->render = malloc(row->size + tabs*7 + 1);
+    row->render = malloc(row->size + tabs*(TAB_STOP-1) + 1);
 
     int idx = 0;
     for (j = 0; j < row->size; j++) {
         if (row->chars[j] == '\t'){
             row->render[idx++] = ' ';
-            while(idx % 8 != 0) row->render[idx++] = ' ';
+            while(idx % TAB_STOP != 0) row->render[idx++] = ' ';
         }else{
             row->render[idx++] = row->chars[j];
         }
@@ -212,6 +263,8 @@ void editorUpdateRow(erow *row) {
 
     row->render[idx] = '\0';
     row->rsize = idx;
+
+    editorUpdateSyntax(row);
 }
 
 void editorInsertRow(int at, char *s, size_t len) {
@@ -229,6 +282,7 @@ void editorInsertRow(int at, char *s, size_t len) {
 
     E.row[at].rsize = 0;
     E.row[at].render = NULL;
+    E.row[at].hl = NULL;
     editorUpdateRow(&E.row[at]);
 
     E.numrows++;
@@ -238,6 +292,7 @@ void editorInsertRow(int at, char *s, size_t len) {
 void editorFreeRow(erow *row) {
     free(row->render);
     free(row->chars);
+    free(row->hl);
 }
 
 void editorDelRow(int at) {
@@ -305,6 +360,21 @@ void editorInsertNewline() {
     }
     E.cy++;
     E.cx = LINE_NUMBER_MARGIN;
+}
+
+void editorInsertTab(){
+    int space_num;
+    if ((E.cx + LINE_NUMBER_MARGIN - 2) % TAB_STOP == 0){
+        space_num = TAB_STOP;
+    }else{
+        space_num = TAB_STOP - ((E.cx + LINE_NUMBER_MARGIN) % TAB_STOP);
+    }
+
+    int i;
+    for (i = 0; i < space_num; i++){
+        editorInsertChar(' ');
+    }
+    
 }
 
 void editorDelChar() {
@@ -399,29 +469,75 @@ void editorSave() {
 /* SEARCH */
 
 void editorFindCallback(char *query, int key) {
-    if (key == '\r' || key == '\x1b') {
-        return;
+    static int last_match = -1;
+    static int direction = 1;
+
+    static int saved_hl_line;
+    static char *saved_hl = NULL;
+
+    if (saved_hl) {
+        memcpy(E.row[saved_hl_line].hl, saved_hl, E.row[saved_hl_line].rsize);
+        free(saved_hl);
+        saved_hl = NULL;
     }
 
+    
+    if (key == '\r' || key == '\x1b') {
+        last_match = -1;
+        direction = 1;
+        return;
+    } else if (key == ARROW_RIGHT || key == ARROW_DOWN) {
+        direction = 1;
+    } else if (key == ARROW_LEFT || key == ARROW_UP) {
+        direction = -1;
+    } else {
+        last_match = -1;
+        direction = 1;
+    }
+    
+    if (last_match == -1) direction = 1;
+    
+    int current = last_match;
     int i;
     for (i = 0; i < E.numrows; i++) {
-        erow *row = &E.row[i];
+        current += direction;
+        
+        if (current == -1) current = E.numrows - 1;
+        else if (current == E.numrows) current = 0;
+        
+        erow *row = &E.row[current];
         char *match = strstr(row->render, query);
         
         if (match) {
-            E.cy = i;
-            E.cx = editorRowRxToCx(row, match - row->render);
+            last_match = current;
+            E.cy = current;
+            E.cx = editorRowRxToCx(row, match - row->render) + LINE_NUMBER_MARGIN;
             E.rowoff = E.numrows;
+
+            saved_hl_line = current;
+            saved_hl = malloc(row->rsize);
+            memcpy(saved_hl, row->hl, row->rsize);
+            memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
             break;
         }
     }
 }
 
-void editorFind() {
-    char *query = editorPrompt("Search: %s (ESC to cancel)", editorFindCallback);
+void editorFind() {  
+    int saved_cx = E.cx;
+    int saved_cy = E.cy;
+    int saved_coloff = E.coloff;
+    int saved_rowoff = E.rowoff;
+    
+    char *query = editorPrompt("Search: %s (Use ESC/Arrows/Enter)", editorFindCallback);
     
     if (query) {
         free(query);
+    } else {
+        E.cx = saved_cx;
+        E.cy = saved_cy;
+        E.coloff = saved_coloff;
+        E.rowoff = saved_rowoff;
     }
 }
 
@@ -485,28 +601,57 @@ void editorDrawRows(struct abuf *abuf){
 
                 int centerPadding = (E.screencolumns - welcomelen) / 2;
                 if(centerPadding){
+                    abufAppend(abuf, "\x1b[38;5;242m", 11);
                     abufAppend(abuf, ">", 1);
+                    abufAppend(abuf, "\x1b[39m", 5);
                     centerPadding--;
                 }
             
                 while (centerPadding--) abufAppend(abuf, " ", 1);
                 abufAppend(abuf, welcome, welcomelen);
             } else {
+                abufAppend(abuf, "\x1b[38;5;242m", 11);
                 abufAppend(abuf, ">", 1);
+                abufAppend(abuf, "\x1b[39m", 5);
+
             }   
         }else{
             int len = E.row[filerow].rsize - E.coloff;
             if(len < 0) len = 0;
-            if (len > E.screencolumns) len = E.screencolumns;
-            
+            if (len > E.screencolumns) len = E.screencolumns;   
+            char *c = &E.row[filerow].render[E.coloff];
+
             char linenum[50];
             sprintf(linenum, "%d", filerow + 1);
             int i;
             for(i = strlen(linenum); i < LINE_NUMBER_MARGIN; i++)    linenum[i] = ' ';
             linenum[i] = '\0';
+            abufAppend(abuf, "\x1b[38;5;242m", 11);
             abufAppend(abuf, linenum, LINE_NUMBER_MARGIN);
-            
-            abufAppend(abuf, &E.row[filerow].render[E.coloff], len);
+            abufAppend(abuf, "\x1b[39m", 5);
+
+            unsigned char *hl = &E.row[filerow].hl[E.coloff];
+            int current_color = -1;
+            int j;
+            for (j = 0; j < len; j++) {
+                if (hl[j] == HL_NORMAL) {          
+                    if (current_color != -1) {
+                        abufAppend(abuf, "\x1b[39m", 5);
+                        current_color = -1;
+                    }
+                    abufAppend(abuf, &c[j], 1);
+                } else {
+                    int color = editorSyntaxToColor(hl[j]);
+                    if(current_color != color){
+                        current_color = color;
+                        char buf[16];
+                        int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
+                        abufAppend(abuf, buf, clen);
+                    }
+                    abufAppend(abuf, &c[j], 1);
+                }
+            }
+            abufAppend(abuf, "\x1b[39m", 5);
         }
         
         
@@ -667,6 +812,9 @@ void editorProcessKeypress() {
     switch (c) {
         case '\r':
             editorInsertNewline();
+            break;
+        case '\t':
+            editorInsertTab();
             break;
         case CTRL_KEY('q'):      
             if (E.dirty && quit_times > 0) {
