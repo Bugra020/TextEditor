@@ -14,7 +14,7 @@
 
 /* DEFINES */
 
-#define KAYRAK_VERSION "v0.4"
+#define KAYRAK_VERSION "v1.0"
 #define LINE_NUMBER_MARGIN 5
 #define TAB_STOP 4
 #define CONFIRM_QUIT_TIMES 2
@@ -60,11 +60,13 @@ struct editorSyntax {
 };
 
 typedef struct erow {
+    int idx;
     int size;
     int rsize;
     char *chars;
     char *render;
     unsigned char *hl;  // highlighting
+    int hl_open_comment;
 }erow;
 
 struct editorConfig {
@@ -231,7 +233,8 @@ void editorUpdateSyntax(erow *row) {
     
     int prev_sep = 1;
     int in_string = 0;
-    int in_comment = 0;
+    int in_comment = (row->idx > 0 && E.row[row->idx - 1].hl_open_comment   );
+    
 
     int i = 0;
     while (i < row->rsize) {
@@ -325,6 +328,11 @@ void editorUpdateSyntax(erow *row) {
         prev_sep = is_separator(c);
         i++;
     }
+
+    int changed = (row->hl_open_comment != in_comment);
+    row->hl_open_comment = in_comment;
+    if (changed && row->idx + 1 < E.numrows)
+        editorUpdateSyntax(&E.row[row->idx + 1]);
 }
 
 int editorSyntaxToColor(int hl) {
@@ -429,6 +437,9 @@ void editorInsertRow(int at, char *s, size_t len) {
     
     E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
     memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
+    for (int j = at + 1; j <= E.numrows; j++) E.row[j].idx++;
+
+    E.row[at].idx = at;
     
     E.row[at].size = len;
     
@@ -440,6 +451,7 @@ void editorInsertRow(int at, char *s, size_t len) {
     E.row[at].rsize = 0;
     E.row[at].render = NULL;
     E.row[at].hl = NULL;
+    E.row[at].hl_open_comment = 0;
     editorUpdateRow(&E.row[at]);
 
     E.numrows++;
@@ -456,6 +468,8 @@ void editorDelRow(int at) {
     if (at < 0 || at >= E.numrows) return;
     editorFreeRow(&E.row[at]);
     memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+    for (int j = at; j < E.numrows - 1; j++) E.row[j].idx--;
+
     E.numrows--;
     E.dirty++;
 }
