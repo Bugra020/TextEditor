@@ -14,7 +14,7 @@
 
 /* DEFINES */
 
-#define KAYRAK_VERSION "v1.0"
+#define KAYRAK_VERSION "v1.1"
 #define LINE_NUMBER_MARGIN 5
 #define TAB_STOP 4
 #define CONFIRM_QUIT_TIMES 2
@@ -337,14 +337,14 @@ void editorUpdateSyntax(erow *row) {
 
 int editorSyntaxToColor(int hl) {
     switch (hl) {
-        case HL_KEYWORD1: return 31;
-        case HL_KEYWORD2: return 35;
+        case HL_KEYWORD1: return 128;
+        case HL_KEYWORD2: return 33;
         case HL_COMMENT:
-        case HL_MLCOMMENT: return 36;
-        case HL_STRING: return 33;
-        case HL_NUMBER: return 32;
-        case HL_MATCH: return 34;
-        default: return 37;
+        case HL_MLCOMMENT: return 84;
+        case HL_STRING: return 172;
+        case HL_NUMBER: return 148;
+        case HL_MATCH: return 21;
+        default: return 250;
     }
 }
 
@@ -820,13 +820,19 @@ void editorDrawRows(struct abuf *abuf){
                     if(current_color != color){
                         current_color = color;
                         char buf[16];
-                        int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
+                        int clen;
+                        if(hl[j] == HL_MATCH){
+                            clen = snprintf(buf, sizeof(buf), "\x1b[48;5;%dm", color);
+                        } else{
+                            clen = snprintf(buf, sizeof(buf), "\x1b[38;5;%dm", color);
+                        }
                         abufAppend(abuf, buf, clen);
                     }
                     abufAppend(abuf, &c[j], 1);
                 }
             }
             abufAppend(abuf, "\x1b[39m", 5);
+            abufAppend(abuf, "\x1b[48;5;m", 8);
         }
         
         
@@ -1008,6 +1014,9 @@ void editorProcessKeypress() {
         case CTRL_KEY('f'):
             editorFind();
             break;
+        case CTRL_KEY('r'):
+            E.filename = editorPrompt("Save as: %s (ESC to cancel)", NULL);
+            break;
         case HOME_KEY:
             E.cx = 0;
             break;
@@ -1079,7 +1088,7 @@ int main(int argc, char *argv[]) {
         editorOpen(argv[1]);
     }
 
-    editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+    editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find | Ctrl-R = rename");
     
     while (1) {
         editorRefreshScreen();
