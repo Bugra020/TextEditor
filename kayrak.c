@@ -15,9 +15,20 @@
 /* DEFINES */
 
 #define KAYRAK_VERSION "v1.1"
+
 #define LINE_NUMBER_MARGIN 5
 #define TAB_STOP 4
 #define CONFIRM_QUIT_TIMES 2
+
+#define KeywordColor 128
+#define VariableColor 33
+#define CommentColor 84
+#define MultilineCommentColor 84
+#define StringColor 172
+#define NumberColor 148
+#define MatchColor 21
+#define DefaultColor 250
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 enum editorKey {  
@@ -337,14 +348,14 @@ void editorUpdateSyntax(erow *row) {
 
 int editorSyntaxToColor(int hl) {
     switch (hl) {
-        case HL_KEYWORD1: return 128;
-        case HL_KEYWORD2: return 33;
-        case HL_COMMENT:
-        case HL_MLCOMMENT: return 84;
-        case HL_STRING: return 172;
-        case HL_NUMBER: return 148;
-        case HL_MATCH: return 21;
-        default: return 250;
+        case HL_KEYWORD1: return KeywordColor;
+        case HL_KEYWORD2: return VariableColor;
+        case HL_COMMENT: return CommentColor;
+        case HL_MLCOMMENT: return MultilineCommentColor;
+        case HL_STRING: return StringColor;
+        case HL_NUMBER: return NumberColor;
+        case HL_MATCH: return MatchColor;
+        default: return DefaultColor;
     }
 }
 
@@ -535,10 +546,10 @@ void editorInsertNewline() {
 
 void editorInsertTab(){
     int space_num;
-    if ((E.cx + LINE_NUMBER_MARGIN - 2) % TAB_STOP == 0){
+    if ((E.cx - LINE_NUMBER_MARGIN) % TAB_STOP == 0){
         space_num = TAB_STOP;
     }else{
-        space_num = TAB_STOP - ((E.cx + LINE_NUMBER_MARGIN) % TAB_STOP);
+        space_num = TAB_STOP - ((E.cx - LINE_NUMBER_MARGIN) % TAB_STOP);
     }
 
     int i;
@@ -849,8 +860,8 @@ void editorDrawStatusBar(struct abuf *abuf) {
     E.filename ? E.filename : "[Unnamed]", E.numrows,
     E.dirty ? "[Modified]" : "");
 
-    int rlen = snprintf(rstatus, sizeof(rstatus), "%s | %d/%d",
-    E.syntax ? E.syntax->filetype : "no ft", E.cy + 1, E.numrows);
+    int rlen = snprintf(rstatus, sizeof(rstatus), "%s | %d:%d",
+    E.syntax ? E.syntax->filetype : "no ft", E.cx - LINE_NUMBER_MARGIN, E.cy + 1);
     
     if (len > E.screencolumns) len = E.screencolumns;
     
