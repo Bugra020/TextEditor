@@ -1,0 +1,11 @@
+LineNumberMargin=5
+TabStop=4
+ConfirmQuitTimes=2
+KeywordColor=128
+VariableColor=33
+CommentColor=84
+MultilineCommentColor=84
+StringColor=172
+NumberColor=148
+MatchColor=21
+DefaultColor=250

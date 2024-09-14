@@ -32,7 +32,7 @@
 *.su
 *.idb
 *.pdb
-*.txt
+ideas_for_future.txt
 
 # Kernel Module Compile Results
 *.mod*
