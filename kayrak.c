@@ -16,10 +16,11 @@
 
 #define KAYRAK_VERSION "v1.1"
 
-/*
-#define LINE_NUMBER_MARGIN (5)
-#define TAB_STOP (4)
 #define CONFIRM_QUIT_TIMES (2)
+
+/*
+#define TAB_STOP (4)
+#define LINE_NUMBER_MARGIN (5)
 
 #define KeywordColor (128)
 #define VariableColor (33)
@@ -593,6 +594,12 @@ void editorDelChar() {
   }
 }
 
+void editorMoveCursorCtrl(int i){
+}
+
+void editorMoveCursorShift(int i){
+}
+
 /*  FILE I/O */
 
 char *editorRowsToString(int *buflen) {
@@ -710,30 +717,27 @@ void editorSetConfig(){
                 HL_config.TabStop = value;
                 break;
             case 3:
-                HL_config.ConfirmQuitTimes = value;
-                break;
-            case 4:
                 HL_config.KeywordColor = value;
                 break;
-            case 5:
+            case 4:
                 HL_config.VariableColor = value;
                 break;
-            case 6:
+            case 5:
                 HL_config.CommentColor = value;
                 break;
-            case 7:
+            case 6:
                 HL_config.MultilineCommentColor = value;
                 break;
-            case 8:
+            case 7:
                 HL_config.StringColor = value;
                 break;
-            case 9:
+            case 8:
                 HL_config.NumberColor = value;
                 break;
-            case 10:
+            case 9:
                 HL_config.MatchColor = value;
                 break;
-            case 11:
+            case 10:
                 HL_config.DefaultColor = value;
                 break;
         }
@@ -1088,7 +1092,7 @@ void editorMoveCursor(int key){
 }
 
 void editorProcessKeypress() {
-    int quit_times = HL_config.ConfirmQuitTimes;
+    static int quit_times = CONFIRM_QUIT_TIMES;
 
     int c = editorReadKey();
 
@@ -1152,20 +1156,63 @@ void editorProcessKeypress() {
         case ARROW_RIGHT:
             editorMoveCursor(c);
             break;
+
         case CTRL_KEY('l'):
         case '\x1b':
+            char seq[5];
+            int i = 0;
+
+            if (read(STDIN_FILENO, &seq[i], 1) == 0) break;
+            i++;
+
+            // Read characters until we have the full escape sequence
+            while (i < sizeof(seq) - 1) {
+                if (read(STDIN_FILENO, &seq[i], 1) == 0) break;
+                // Check if we have reached the end of the sequence
+                i++;
+                if (seq[i] >= 'A' && seq[i] <= 'D') {
+                    break;
+                }
+            }
+            seq[i] = '\0';  
+
+            if (seq[0] == ';') {
+                char mod = seq[1];
+                char dir = seq[2];
+
+                // Shift + Arrow
+                if (mod == '2') {
+                    switch (dir) {
+                        case 'A': editorMoveCursorShift(ARROW_UP); break;
+                        case 'B': editorMoveCursorShift(ARROW_DOWN); break;
+                        case 'C': editorMoveCursorShift(ARROW_RIGHT); break;
+                        case 'D': editorMoveCursorShift(ARROW_LEFT); break;
+                    }
+                }
+                // Ctrl + Arrow
+                else if (mod == '5') {
+                    switch (dir) {
+                        case 'A': editorMoveCursorCtrl(ARROW_UP); break;
+                        case 'B': editorMoveCursorCtrl(ARROW_DOWN); break;
+                        case 'C': editorMoveCursorCtrl(ARROW_RIGHT); break;
+                        case 'D': editorMoveCursorCtrl(ARROW_LEFT); break;
+                    }
+                }
+            }
             break;
         default:
             editorInsertChar(c);
             break;
   }
 
-  quit_times = HL_config.ConfirmQuitTimes;
+  quit_times = CONFIRM_QUIT_TIMES;
 }
 
 /* INIT */
 
 void initEditor(){
+    editorSetConfig();
+
     E.cx = HL_config.LineNumberMargin;
     E.cy = 0;
     E.rx = 0;
@@ -1181,8 +1228,6 @@ void initEditor(){
     
     if (getTermianlSize(&E.screenrows, &E.screencolumns) == -1) die("getTerminalSize");
     E.screenrows -= 2;
-
-    editorSetConfig();
 }
 
 int main(int argc, char *argv[]) {

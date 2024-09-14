@@ -1,6 +1,5 @@
 LineNumberMargin=5
 TabStop=4
-ConfirmQuitTimes=2
 KeywordColor=128
 VariableColor=33
 CommentColor=84
