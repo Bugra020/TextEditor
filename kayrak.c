@@ -16,18 +16,20 @@
 
 #define KAYRAK_VERSION "v1.1"
 
-#define LINE_NUMBER_MARGIN 5
-#define TAB_STOP 4
-#define CONFIRM_QUIT_TIMES 2
+/*
+#define LINE_NUMBER_MARGIN (5)
+#define TAB_STOP (4)
+#define CONFIRM_QUIT_TIMES (2)
 
-#define KeywordColor 128
-#define VariableColor 33
-#define CommentColor 84
-#define MultilineCommentColor 84
-#define StringColor 172
-#define NumberColor 148
-#define MatchColor 21
-#define DefaultColor 250
+#define KeywordColor (128)
+#define VariableColor (33)
+#define CommentColor (84)
+#define MultilineCommentColor (84)
+#define StringColor (172)
+#define NumberColor (148)
+#define MatchColor (21)
+#define DefaultColor (250)
+*/
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -98,6 +100,22 @@ struct editorConfig {
 };
 
 struct editorConfig E;
+
+struct editorHLConfig{
+    int LineNumberMargin;
+    int TabStop;
+    int ConfirmQuitTimes;
+    int KeywordColor;
+    int VariableColor;
+    int CommentColor;
+    int MultilineCommentColor;
+    int StringColor;
+    int NumberColor;
+    int MatchColor;
+    int DefaultColor; 
+};
+
+struct editorHLConfig HL_config;
 
 /* FILETYPES */
 
@@ -348,14 +366,14 @@ void editorUpdateSyntax(erow *row) {
 
 int editorSyntaxToColor(int hl) {
     switch (hl) {
-        case HL_KEYWORD1: return KeywordColor;
-        case HL_KEYWORD2: return VariableColor;
-        case HL_COMMENT: return CommentColor;
-        case HL_MLCOMMENT: return MultilineCommentColor;
-        case HL_STRING: return StringColor;
-        case HL_NUMBER: return NumberColor;
-        case HL_MATCH: return MatchColor;
-        default: return DefaultColor;
+        case HL_KEYWORD1: return HL_config.KeywordColor;
+        case HL_KEYWORD2: return HL_config.VariableColor;
+        case HL_COMMENT: return HL_config.CommentColor;
+        case HL_MLCOMMENT: return HL_config.MultilineCommentColor;
+        case HL_STRING: return HL_config.StringColor;
+        case HL_NUMBER: return HL_config.NumberColor;
+        case HL_MATCH: return HL_config.MatchColor;
+        default: return HL_config.DefaultColor;
     }
 }
 
@@ -409,7 +427,7 @@ int editorRowRxToCx(erow *row, int rx) {
     
     for (cx = 0; cx < row->size; cx++) {
         if (row->chars[cx] == '\t')
-            cur_rx += (TAB_STOP - 1) - (cur_rx % TAB_STOP);
+            cur_rx += (HL_config.TabStop - 1) - (cur_rx % HL_config.TabStop);
         
         cur_rx++;
         
@@ -425,13 +443,13 @@ void editorUpdateRow(erow *row) {
         if(row->chars[j] == '\t')  tabs++;
 
     free(row->render);
-    row->render = malloc(row->size + tabs*(TAB_STOP-1) + 1);
+    row->render = malloc(row->size + tabs*(HL_config.TabStop-1) + 1);
 
     int idx = 0;
     for (j = 0; j < row->size; j++) {
         if (row->chars[j] == '\t'){
             row->render[idx++] = ' ';
-            while(idx % TAB_STOP != 0) row->render[idx++] = ' ';
+            while(idx % HL_config.TabStop != 0) row->render[idx++] = ' ';
         }else{
             row->render[idx++] = row->chars[j];
         }
@@ -486,7 +504,7 @@ void editorDelRow(int at) {
 }
 
 void editorRowInsertChar(erow *row, int at, int c) {
-    at -= LINE_NUMBER_MARGIN;
+    at -= HL_config.LineNumberMargin;
     if (at < 0 || at > row->size) at = row->size;
     
     row->chars = realloc(row->chars, row->size + 2);
@@ -509,7 +527,7 @@ void editorRowAppendString(erow *row, char *s, size_t len) {
 }
 
 void editorRowDelChar(erow *row, int at) {
-    at -= LINE_NUMBER_MARGIN;
+    at -= HL_config.LineNumberMargin;
     if (at < 0 || at >= row->size) return;
     
     memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
@@ -530,26 +548,26 @@ void editorInsertChar(int c) {
 }
 
 void editorInsertNewline() {
-    if (E.cx == LINE_NUMBER_MARGIN) {
+    if (E.cx == HL_config.LineNumberMargin) {
         editorInsertRow(E.cy, "", 0);
     } else {
         erow *row = &E.row[E.cy];
-        editorInsertRow(E.cy + 1, &row->chars[E.cx - LINE_NUMBER_MARGIN], row->size - E.cx + LINE_NUMBER_MARGIN);
+        editorInsertRow(E.cy + 1, &row->chars[E.cx - HL_config.LineNumberMargin], row->size - E.cx + HL_config.LineNumberMargin);
         row = &E.row[E.cy];
-        row->size = E.cx - LINE_NUMBER_MARGIN;
+        row->size = E.cx - HL_config.LineNumberMargin;
         row->chars[row->size] = '\0';
         editorUpdateRow(row);
     }
     E.cy++;
-    E.cx = LINE_NUMBER_MARGIN;
+    E.cx = HL_config.LineNumberMargin;
 }
 
 void editorInsertTab(){
     int space_num;
-    if ((E.cx - LINE_NUMBER_MARGIN) % TAB_STOP == 0){
-        space_num = TAB_STOP;
+    if ((E.cx - HL_config.LineNumberMargin) % HL_config.TabStop == 0){
+        space_num = HL_config.TabStop ;
     }else{
-        space_num = TAB_STOP - ((E.cx - LINE_NUMBER_MARGIN) % TAB_STOP);
+        space_num = HL_config.TabStop  - ((E.cx - HL_config.LineNumberMargin) % HL_config.TabStop );
     }
 
     int i;
@@ -561,14 +579,14 @@ void editorInsertTab(){
 
 void editorDelChar() {
     if (E.cy == E.numrows) return;
-    if (E.cx == LINE_NUMBER_MARGIN && E.cy == 0) return;
+    if (E.cx == HL_config.LineNumberMargin && E.cy == 0) return;
     
     erow *row = &E.row[E.cy];
-    if (E.cx > LINE_NUMBER_MARGIN) {
+    if (E.cx > HL_config.LineNumberMargin) {
         editorRowDelChar(row, E.cx - 1);
         E.cx--;
-    }else if(E.cx == LINE_NUMBER_MARGIN){
-        E.cx = E.row[E.cy - 1].size + LINE_NUMBER_MARGIN;
+    }else if(E.cx == HL_config.LineNumberMargin){
+        E.cx = E.row[E.cy - 1].size + HL_config.LineNumberMargin;
         editorRowAppendString(&E.row[E.cy - 1], row->chars, row->size);
         editorDelRow(E.cy);
         E.cy--;
@@ -652,6 +670,79 @@ void editorSave() {
     editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
 }
 
+void editorSetConfig(){
+    FILE *fp = fopen("config.txt", "r");
+    if(!fp) die("fopen");
+
+    char *line = NULL;
+    size_t linecap = 0;
+    size_t linelen;
+    size_t linesep;
+    size_t linenum = 0;// matchcolor=123
+    
+    while ((linelen = getline(&line, &linecap, fp)) != -1){
+        while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
+            linelen--;
+
+        int i;
+        for (i = 0; i < linelen; i++){
+            if(line[i] == '='){ 
+                linesep = i;
+                break;  
+            }
+        }
+        
+        linenum++;
+        char *sep = strchr(line, '=');
+        if (sep == NULL) continue;
+
+        *sep = '\0';
+        //char *key = line;
+        char *strvalue = sep + 1;
+
+        int value = atoi(strvalue);
+
+        switch (linenum){
+            case 1:
+                HL_config.LineNumberMargin = value;
+                break;
+            case 2:
+                HL_config.TabStop = value;
+                break;
+            case 3:
+                HL_config.ConfirmQuitTimes = value;
+                break;
+            case 4:
+                HL_config.KeywordColor = value;
+                break;
+            case 5:
+                HL_config.VariableColor = value;
+                break;
+            case 6:
+                HL_config.CommentColor = value;
+                break;
+            case 7:
+                HL_config.MultilineCommentColor = value;
+                break;
+            case 8:
+                HL_config.StringColor = value;
+                break;
+            case 9:
+                HL_config.NumberColor = value;
+                break;
+            case 10:
+                HL_config.MatchColor = value;
+                break;
+            case 11:
+                HL_config.DefaultColor = value;
+                break;
+        }
+    }
+    
+    free(line);
+    fclose(fp);
+}
+
 /* SEARCH */
 
 void editorFindCallback(char *query, int key) {
@@ -697,7 +788,7 @@ void editorFindCallback(char *query, int key) {
         if (match) {
             last_match = current;
             E.cy = current;
-            E.cx = editorRowRxToCx(row, match - row->render) + LINE_NUMBER_MARGIN;
+            E.cx = editorRowRxToCx(row, match - row->render) + HL_config.LineNumberMargin;
             E.rowoff = E.numrows;
 
             saved_hl_line = current;
@@ -810,10 +901,10 @@ void editorDrawRows(struct abuf *abuf){
             char linenum[50];
             sprintf(linenum, "%d", filerow + 1);
             int i;
-            for(i = strlen(linenum); i < LINE_NUMBER_MARGIN; i++)    linenum[i] = ' ';
+            for(i = strlen(linenum); i < HL_config.LineNumberMargin; i++)    linenum[i] = ' ';
             linenum[i] = '\0';
             abufAppend(abuf, "\x1b[38;5;242m", 11);
-            abufAppend(abuf, linenum, LINE_NUMBER_MARGIN);
+            abufAppend(abuf, linenum, HL_config.LineNumberMargin);
             abufAppend(abuf, "\x1b[39m", 5);
 
             unsigned char *hl = &E.row[filerow].hl[E.coloff];
@@ -861,7 +952,7 @@ void editorDrawStatusBar(struct abuf *abuf) {
     E.dirty ? "[Modified]" : "");
 
     int rlen = snprintf(rstatus, sizeof(rstatus), "%s | %d:%d",
-    E.syntax ? E.syntax->filetype : "no ft", E.cx - LINE_NUMBER_MARGIN, E.cy + 1);
+    E.syntax ? E.syntax->filetype : "no ft", E.cx - HL_config.LineNumberMargin, E.cy + 1);
     
     if (len > E.screencolumns) len = E.screencolumns;
     
@@ -970,26 +1061,26 @@ void editorMoveCursor(int key){
         if (E.cy != 0) E.cy--;
         break;
     case ARROW_LEFT:
-        if(E.cx > LINE_NUMBER_MARGIN) E.cx--;
+        if(E.cx > HL_config.LineNumberMargin) E.cx--;
         else if(E.cy > 0){
             E.cy--;
-            E.cx = E.row[E.cy].size + LINE_NUMBER_MARGIN;
+            E.cx = E.row[E.cy].size + HL_config.LineNumberMargin;
         }
         break;
     case ARROW_DOWN:
         if(E.cy < E.numrows) E.cy++;
         break;
     case ARROW_RIGHT:
-        if(row && E.cx < row->size + LINE_NUMBER_MARGIN) E.cx++;
-        else if(row && E.cx == row->size + LINE_NUMBER_MARGIN){
+        if(row && E.cx < row->size + HL_config.LineNumberMargin) E.cx++;
+        else if(row && E.cx == row->size + HL_config.LineNumberMargin){
             E.cy++;
-            E.cx = LINE_NUMBER_MARGIN;
+            E.cx = HL_config.LineNumberMargin;
         }
         break;
     }
 
     row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
-    int rowlen = (row ? row->size : 0) + LINE_NUMBER_MARGIN;
+    int rowlen = (row ? row->size : 0) + HL_config.LineNumberMargin;
     if (E.cx > rowlen) {
         E.cx = rowlen;
     }
@@ -997,7 +1088,7 @@ void editorMoveCursor(int key){
 }
 
 void editorProcessKeypress() {
-    static int quit_times = CONFIRM_QUIT_TIMES;
+    int quit_times = HL_config.ConfirmQuitTimes;
 
     int c = editorReadKey();
 
@@ -1069,13 +1160,13 @@ void editorProcessKeypress() {
             break;
   }
 
-  quit_times = CONFIRM_QUIT_TIMES;
+  quit_times = HL_config.ConfirmQuitTimes;
 }
 
 /* INIT */
 
 void initEditor(){
-    E.cx = LINE_NUMBER_MARGIN;
+    E.cx = HL_config.LineNumberMargin;
     E.cy = 0;
     E.rx = 0;
     E.numrows = 0;
@@ -1090,6 +1181,8 @@ void initEditor(){
     
     if (getTermianlSize(&E.screenrows, &E.screencolumns) == -1) die("getTerminalSize");
     E.screenrows -= 2;
+
+    editorSetConfig();
 }
 
 int main(int argc, char *argv[]) {
